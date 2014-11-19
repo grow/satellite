@@ -5,6 +5,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"path"
 
 	"appengine"
@@ -24,20 +25,25 @@ func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Prevent click-jacking.
 	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 
+	// Force https.
+	if r.URL.Scheme != "https" && !appengine.IsDevAppServer() {
+		redirectUrl, _ := url.ParseRequestURI(r.URL.String())
+		redirectUrl.Scheme = "https"
+		http.Redirect(w, r, redirectUrl.String(), http.StatusMovedPermanently)
+		return
+	}
+
+	// Initialize the server.
 	if !s.initialized {
 		settings := make([]Settings, 2)
-		err := GetSettings(c, []string{"auth", "storage"}, settings)
-		if err != nil {
-			c.Errorf(err.Error())
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintln(w, "500: Internal Server Error")
-			return
-		}
+		GetSettings(c, []string{"auth", "storage"}, settings)
 		authSettings := settings[0]
 		storageSettings := settings[1]
 
 		if authSettings == nil || storageSettings == nil {
-			// TODO(stevenle): Redirect user to the admin configuration page.
+			// Redirect user to the admin configuration page.
+			http.Redirect(w, r, "/admin/settings", http.StatusFound)
+			return
 		}
 
 		if authSettings["type"] == "basic" {
