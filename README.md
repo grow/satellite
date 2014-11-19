@@ -1,1 +1,1 @@
-# Satellite - A remote production server for Grow-published sites.
+# Satellite - A remote server for Grow-launched sites.

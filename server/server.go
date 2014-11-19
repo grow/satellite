@@ -13,24 +13,33 @@ import (
 )
 
 type SatelliteServer struct {
-	auth  auth.Authenticator
-	files storage.FileStorage
+	initialized bool
+	auth        auth.Authenticator
+	files       storage.FileStorage
 }
 
 func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	c := appengine.NewContext(r)
+
 	// Prevent click-jacking.
 	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 
+	if !s.initialized {
+		// TODO(stevenle): Read configuration settings from datastore.
+		// For now, use basic auth and GCS for auth and storage.
+		s.auth = auth.NewBasicAuth()
+		s.files = storage.NewGcsFileStorage("app_default_bucket") // devappserver
+		s.initialized = true
+	}
+
 	// Authorize the request.
-	is_authorized := s.auth.IsAuthorized(r)
-	if !is_authorized {
+	authorized := s.auth.IsAuthorized(r)
+	if !authorized {
 		w.Header().Set("WWW-Authenticate", "Basic realm=\"Please enter a username and password\"")
 		w.WriteHeader(http.StatusUnauthorized)
 		fmt.Fprintln(w, "401: Unauthorized")
 		return
 	}
-
-	c := appengine.NewContext(r)
 
 	// Determine the file path from the URL.
 	filePath := r.URL.Path
@@ -66,19 +75,9 @@ func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func init() {
 	mime.AddExtensionType(".ico", "image/x-icon")
-
-	// TODO(stevenle): Read configuration settings from datastore.
-	// For now, use basic auth and GCS for auth and storage.
-	var authenticator auth.Authenticator
-	var files storage.FileStorage
-	authenticator = auth.NewBasicAuth()
-	files = storage.NewGcsFileStorage("app_default_bucket") // devappserver
-
 	s := &SatelliteServer{
-		auth:  authenticator,
-		files: files,
+		initialized: false,
 	}
-
 	// TODO(stevenle): Add an admin handler for configuration changes.
 	http.Handle("/", s)
 }
