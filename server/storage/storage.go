@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"mime"
 	"net/http"
 	"path"
 
@@ -37,6 +38,29 @@ func (g *GcsFileStorage) Serve(c appengine.Context, filePath string, w http.Resp
 		return err
 	}
 	blobstore.Send(w, blobKey)
+	return nil
+}
+
+func (g *GcsFileStorage) Write(c appengine.Context, filePath string, content []byte) error {
+	ext := path.Ext(filePath)
+	mimetype := mime.TypeByExtension(ext)
+	opts := &gcs.CreateOptions{
+		MIMEType:   mimetype,
+		BucketName: g.bucket,
+	}
+
+	gcsPath := g.getGcsPath(filePath)
+	writer, _, err := gcs.Create(c, gcsPath, opts)
+	if err != nil {
+		return err
+	}
+
+	defer writer.Close()
+	_, err = writer.Write(content)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
