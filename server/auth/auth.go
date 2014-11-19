@@ -17,5 +17,5 @@ func NewBasicAuth() *BasicAuth {
 }
 
 func (b *BasicAuth) IsAuthorized(r *http.Request) bool {
-	return false
+	return true
 }
