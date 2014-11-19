@@ -9,5 +9,5 @@ install:
   - unzip -q $FILE
 
 script:
-  - ./go_appengine/goapp test server/auth
-  - ./go_appengine/goapp test server/storage
+  - ./go_appengine/goapp test ./server/auth
+  - ./go_appengine/goapp test ./server/storage
