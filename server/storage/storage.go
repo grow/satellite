@@ -1,13 +1,16 @@
 package storage
 
 import (
-	"bufio"
 	"io"
+	"path"
+
+	"appengine"
+	gcs "appengine/file"
 )
 
 type FileStorage interface {
-	Exists(path string) bool
-	Read(path string, w io.Writer)
+	Exists(c appengine.Context, filePath string) bool
+	Open(c appengine.Context, filePath string) (io.Reader, error)
 }
 
 type GcsFileStorage struct {
@@ -20,12 +23,17 @@ func NewGcsFileStorage(bucket string) *GcsFileStorage {
 	}
 }
 
-func (g *GcsFileStorage) Exists(path string) bool {
-	return true
+func (g *GcsFileStorage) Exists(c appengine.Context, filePath string) bool {
+	gcsPath := g.getGcsPath(filePath)
+	fileInfo, _ := gcs.Stat(c, gcsPath)
+	return fileInfo != nil
 }
 
-func (g *GcsFileStorage) Read(path string, w io.Writer) {
-	buffer := bufio.NewWriter(w)
-	buffer.Write([]byte("Hello, world!"))
-	buffer.Flush()
+func (g *GcsFileStorage) Open(c appengine.Context, filePath string) (io.Reader, error) {
+	gcsPath := g.getGcsPath(filePath)
+	return gcs.Open(c, gcsPath)
+}
+
+func (g *GcsFileStorage) getGcsPath(filePath string) string {
+	return path.Join("/gs", g.bucket, filePath)
 }

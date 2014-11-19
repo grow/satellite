@@ -2,11 +2,12 @@ package server
 
 import (
 	"fmt"
-	"log"
+	"io"
 	"mime"
 	"net/http"
 	"path"
 
+	"appengine"
 	"server/auth"
 	"server/storage"
 )
@@ -28,6 +29,8 @@ func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	c := appengine.NewContext(r)
+
 	// Determine the file path from the URL.
 	filePath := r.URL.Path
 	ext := path.Ext(filePath)
@@ -35,21 +38,29 @@ func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		filePath = path.Join(filePath, "index.html")
 		ext = ".html"
 	}
-	if !s.files.Exists(filePath) {
+	if !s.files.Exists(c, filePath) {
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintln(w, "404: Not Found")
 		return
 	}
 
+	// Open the file from storage.
+	reader, err := s.files.Open(c, filePath)
+	if err != nil {
+		c.Errorf("Failed to open %v: %v", filePath, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, "500: Internal Server Error")
+		return
+	}
+
 	// Set the Content-Type header based on the file ext.
 	mimetype := mime.TypeByExtension(ext)
-	log.Println(mimetype)
 	if mimetype != "" {
 		w.Header().Set("Content-Type", mimetype)
 	}
 
 	// Write the contents of the file to the response.
-	s.files.Read(filePath, w)
+	io.Copy(w, reader)
 }
 
 func init() {
@@ -59,7 +70,7 @@ func init() {
 	var authenticator auth.Authenticator
 	var files storage.FileStorage
 	authenticator = auth.NewBasicAuth()
-	files = storage.NewGcsFileStorage("bucket")
+	files = storage.NewGcsFileStorage("app_default_bucket") // devappserver
 
 	s := &SatelliteServer{
 		auth:  authenticator,
