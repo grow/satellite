@@ -1,16 +1,17 @@
 package storage
 
 import (
-	"io"
+	"net/http"
 	"path"
 
 	"appengine"
+	"appengine/blobstore"
 	gcs "appengine/file"
 )
 
 type FileStorage interface {
 	Exists(c appengine.Context, filePath string) bool
-	Open(c appengine.Context, filePath string) (io.Reader, error)
+	Serve(c appengine.Context, filePath string, w http.ResponseWriter) error
 }
 
 type GcsFileStorage struct {
@@ -29,9 +30,14 @@ func (g *GcsFileStorage) Exists(c appengine.Context, filePath string) bool {
 	return fileInfo != nil
 }
 
-func (g *GcsFileStorage) Open(c appengine.Context, filePath string) (io.Reader, error) {
+func (g *GcsFileStorage) Serve(c appengine.Context, filePath string, w http.ResponseWriter) error {
 	gcsPath := g.getGcsPath(filePath)
-	return gcs.Open(c, gcsPath)
+	blobKey, err := blobstore.BlobKeyForFile(c, gcsPath)
+	if err != nil {
+		return err
+	}
+	blobstore.Send(w, blobKey)
+	return nil
 }
 
 func (g *GcsFileStorage) getGcsPath(filePath string) string {

@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"io"
 	"mime"
 	"net/http"
 	"net/url"
@@ -93,23 +92,20 @@ func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Open the file from storage.
-	reader, err := s.files.Open(c, filePath)
-	if err != nil {
-		c.Errorf("Failed to open %v: %v", filePath, err)
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintln(w, "500: Internal Server Error")
-		return
-	}
-
 	// Set the Content-Type header based on the file ext.
 	mimetype := mime.TypeByExtension(ext)
 	if mimetype != "" {
 		w.Header().Set("Content-Type", mimetype)
 	}
 
-	// Write the contents of the file to the response.
-	io.Copy(w, reader)
+	// Serve the file.
+	err := s.files.Serve(c, filePath, w)
+	if err != nil {
+		c.Errorf("Failed to serve %v: %v", filePath, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, "500: Internal Server Error")
+		return
+	}
 }
 
 func init() {
