@@ -24,6 +24,7 @@ func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Authorize the request.
 	is_authorized := s.auth.IsAuthorized(r)
 	if !is_authorized {
+		w.Header().Set("WWW-Authenticate", "Basic realm=\"Please enter a username and password\"")
 		w.WriteHeader(http.StatusUnauthorized)
 		fmt.Fprintln(w, "401: Unauthorized")
 		return
@@ -67,6 +68,7 @@ func init() {
 	mime.AddExtensionType(".ico", "image/x-icon")
 
 	// TODO(stevenle): Read configuration settings from datastore.
+	// For now, use basic auth and GCS for auth and storage.
 	var authenticator auth.Authenticator
 	var files storage.FileStorage
 	authenticator = auth.NewBasicAuth()
