@@ -25,10 +25,43 @@ func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 
 	if !s.initialized {
-		// TODO(stevenle): Read configuration settings from datastore.
-		// For now, use basic auth and GCS for auth and storage.
-		s.auth = auth.NewBasicAuth()
-		s.files = storage.NewGcsFileStorage("app_default_bucket") // devappserver
+		settings := make([]Settings, 2)
+		err := GetSettings(c, []string{"auth", "storage"}, settings)
+		if err != nil {
+			c.Errorf(err.Error())
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintln(w, "500: Internal Server Error")
+			return
+		}
+		authSettings := settings[0]
+		storageSettings := settings[1]
+
+		if authSettings == nil || storageSettings == nil {
+			// TODO(stevenle): Redirect user to the admin configuration page.
+		}
+
+		if authSettings["type"] == "basic" {
+			basicAuth := auth.NewBasicAuth()
+			if appengine.IsDevAppServer() {
+				go basicAuth.AddUser(c, "test", "testing123")
+			}
+			s.auth = basicAuth
+		} else {
+			c.Errorf("Unknown auth type: %v", authSettings["type"])
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintln(w, "500: Internal Server Error")
+			return
+		}
+
+		if storageSettings["type"] == "gcs" {
+			s.files = storage.NewGcsFileStorage(storageSettings["bucket"])
+		} else {
+			c.Errorf("Unknown storage type: %v", storageSettings["type"])
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintln(w, "500: Internal Server Error")
+			return
+		}
+
 		s.initialized = true
 	}
 
