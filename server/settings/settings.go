@@ -1,4 +1,4 @@
-package server
+package settings
 
 import (
 	"encoding/json"
@@ -17,7 +17,7 @@ const EntityAppSetting = "AppSetting"
 
 type Settings map[string]string
 
-func GetSettings(c appengine.Context, keys []string, values []Settings) error {
+func GetMulti(c appengine.Context, keys []string, values []Settings) error {
 	datastoreKeys := make([]*datastore.Key, len(keys))
 	for i, key := range keys {
 		datastoreKeys[i] = datastore.NewKey(c, EntityAppSetting, key, 0 /* intID */, nil /* parent */)
@@ -37,7 +37,7 @@ func GetSettings(c appengine.Context, keys []string, values []Settings) error {
 	return nil
 }
 
-func SetSettings(c appengine.Context, key string, settings Settings) error {
+func Set(c appengine.Context, key string, settings Settings) error {
 	datastoreKey := datastore.NewKey(c, EntityAppSetting, key, 0 /* intID */, nil /* parent */)
 	jsonData, err := json.Marshal(settings)
 	if err != nil {
