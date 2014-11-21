@@ -8,7 +8,10 @@ import (
 	"path"
 
 	"appengine"
+	"github.com/gorilla/rpc/v2"
+	jsonrpc "github.com/gorilla/rpc/v2/json"
 	"server/auth"
+	"server/settings"
 	"server/storage"
 )
 
@@ -34,10 +37,10 @@ func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Initialize the server.
 	if !s.initialized {
-		settings := make([]Settings, 2)
-		GetSettings(c, []string{"auth", "storage"}, settings)
-		authSettings := settings[0]
-		storageSettings := settings[1]
+		settingsList := make([]settings.Settings, 2)
+		settings.GetMulti(c, []string{"auth", "storage"}, settingsList)
+		authSettings := settingsList[0]
+		storageSettings := settingsList[1]
 
 		if authSettings == nil || storageSettings == nil {
 			// Redirect user to the admin configuration page.
@@ -113,6 +116,11 @@ func init() {
 	s := &SatelliteServer{
 		initialized: false,
 	}
-	// TODO(stevenle): Add an admin handler for configuration changes.
+
+	rpcServer := rpc.NewServer()
+	rpcServer.RegisterCodec(jsonrpc.NewCodec(), "application/json")
+	rpcServer.RegisterService(auth.NewBasicAuthService(), "BasicAuthService")
+
+	http.Handle("/admin/rpc", rpcServer)
 	http.Handle("/", s)
 }
