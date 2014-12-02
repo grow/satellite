@@ -120,6 +120,7 @@ func init() {
 	rpcServer := rpc.NewServer()
 	rpcServer.RegisterCodec(jsonrpc.NewCodec(), "application/json")
 	rpcServer.RegisterService(auth.NewBasicAuthService(), "BasicAuthService")
+	rpcServer.RegisterService(settings.NewSettingsService(), "SettingsService")
 
 	http.Handle("/admin/rpc", rpcServer)
 	http.Handle("/", s)
