@@ -91,7 +91,12 @@ func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.files.Exists(c, filePath) {
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintln(w, "404: Not Found")
+		// Try to render /404.html if it exists.
+		if s.files.Exists(c, "/404.html") {
+			s.files.Serve(c, "/404.html", w)
+		} else {
+			fmt.Fprintln(w, "404: Not Found")
+		}
 		return
 	}
 
@@ -104,9 +109,15 @@ func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Serve the file.
 	err := s.files.Serve(c, filePath, w)
 	if err != nil {
+		// Internal server error.
+		// Try to render /500.html if it exists.
 		c.Errorf("Failed to serve %v: %v", filePath, err)
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintln(w, "500: Internal Server Error")
+		if s.files.Exists(c, "/500.html") {
+			s.files.Serve(c, "/500.html", w)
+		} else {
+			fmt.Fprintln(w, "500: Internal Server Error")
+		}
 		return
 	}
 }
