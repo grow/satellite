@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 
 	"appengine"
 	"github.com/gorilla/rpc/v2"
@@ -104,6 +105,11 @@ func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mimetype := mime.TypeByExtension(ext)
 	if mimetype != "" {
 		w.Header().Set("Content-Type", mimetype)
+	}
+
+	// By default, set cache-control headers for images.
+	if strings.HasPrefix(mimetype, "image/") {
+		w.Header().Set("Cache-Control", "private, max-age=3600")
 	}
 
 	// Serve the file.
