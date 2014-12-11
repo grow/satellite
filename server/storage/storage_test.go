@@ -46,19 +46,4 @@ func TestGcsStorage(t *testing.T) {
 	if !s.Exists(c2, "/hello.txt") {
 		t.Fatal("Failed: /hello.txt does not exist")
 	}
-
-	req3, err := inst.NewRequest("GET", "/hello.txt", nil)
-	if err != nil {
-		t.Fatal("Failed to create req3: %v", err)
-	}
-	c3 := appengine.NewContext(req3)
-	blobKey, err := blobstore.BlobKeyForFile(c3, s.getGcsPath("/hello.txt"))
-	if err != nil {
-		t.Fatalf("Failed to get blob key for /hello.txt: %v", err)
-	}
-	w := httptest.NewRecorder()
-	s.Serve(c3, "/hello.txt", w)
-	if w.Header().Get("X-AppEngine-BlobKey") != string(blobKey) {
-		t.Fatal("Failed to send response via blobstore")
-	}
 }
