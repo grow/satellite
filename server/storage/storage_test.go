@@ -1,12 +1,10 @@
 package storage
 
 import (
-	"net/http/httptest"
 	"testing"
 
 	"appengine"
 	"appengine/aetest"
-	"appengine/blobstore"
 )
 
 func TestGcsStorage(t *testing.T) {
