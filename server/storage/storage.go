@@ -1,22 +1,32 @@
 package storage
 
 import (
+	"fmt"
 	"mime"
 	"net/http"
 	"path"
+	"strings"
+	"time"
 
 	"appengine"
 	"appengine/blobstore"
 	gcs "appengine/file"
+	"appengine/urlfetch"
+	"code.google.com/p/goauth2/oauth"
+	"code.google.com/p/google-api-go-client/storage/v1"
 )
 
 type FileStorage interface {
-	Exists(c appengine.Context, filePath string) bool
-	Serve(c appengine.Context, filePath string, w http.ResponseWriter) error
+	Serve(w http.ResponseWriter, r *http.Request) error
 }
 
 type GcsFileStorage struct {
 	bucket string
+}
+
+type GcsFileStat struct {
+	Etag         string
+	ModifiedTime time.Time
 }
 
 func NewGcsFileStorage(bucket string) *GcsFileStorage {
@@ -31,14 +41,99 @@ func (g *GcsFileStorage) Exists(c appengine.Context, filePath string) bool {
 	return fileInfo != nil
 }
 
-func (g *GcsFileStorage) Serve(c appengine.Context, filePath string, w http.ResponseWriter) error {
+func (g *GcsFileStorage) Serve(w http.ResponseWriter, r *http.Request) error {
+	c := appengine.NewContext(r)
+
+	filePath := r.URL.Path
+	ext := path.Ext(filePath)
+	if ext == "" {
+		filePath = path.Join(filePath, "index.html")
+		ext = ".html"
+	}
 	gcsPath := g.getGcsPath(filePath)
+
+	// Get file stat.
+	stat, err := g.Stat(c, filePath)
+	if err != nil {
+		c.Errorf("stat error: %v", err)
+	}
+	if stat == nil {
+		w.WriteHeader(http.StatusNotFound)
+		// TODO(stevenle): add custom 404 pages.
+		fmt.Fprintln(w, "404: Not Found")
+		return nil
+	}
+
+	// Set the Content-Type header based on the file ext.
+	mimetype := mime.TypeByExtension(ext)
+	if mimetype != "" {
+		w.Header().Set("Content-Type", mimetype)
+	}
+
+	// By default, set cache-control headers for images.
+	if strings.HasPrefix(mimetype, "image/") {
+		w.Header().Set("Cache-Control", "private, max-age=3600, s-maxage=3600")
+	}
+
+	// Set HTTP modification time and etag headers.
+	w.Header().Set("ETag", stat.Etag)
+	w.Header().Set("Last-Modified", stat.ModifiedTime.Format(time.RFC1123))
+
+	if r.Header.Get("If-None-Match") == stat.Etag {
+		w.WriteHeader(http.StatusNotModified)
+		return nil
+	}
+
 	blobKey, err := blobstore.BlobKeyForFile(c, gcsPath)
 	if err != nil {
 		return err
 	}
 	blobstore.Send(w, blobKey)
 	return nil
+}
+
+func (g *GcsFileStorage) Stat(c appengine.Context, filePath string) (*GcsFileStat, error) {
+	// Remove leading slash to ge the GCS object id.
+	// E.g. filePath = "/index.html", gcsObjectId = "index.html".
+	gcsObjectId := filePath[1:]
+
+	accessToken, _, err := appengine.AccessToken(c, storage.CloudPlatformScope, storage.DevstorageRead_onlyScope)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO(stevenle): concurrently read from memcache.
+	transport := &oauth.Transport{
+		Token: &oauth.Token{
+			AccessToken: accessToken,
+		},
+		Transport: &urlfetch.Transport{
+			Context: c,
+		},
+	}
+	client := &http.Client{Transport: transport}
+	storageService, err := storage.New(client)
+	if err != nil {
+		return nil, err
+	}
+
+	objectService := storage.NewObjectsService(storageService)
+	obj, err := objectService.Get(g.bucket, gcsObjectId).Do()
+	if err != nil {
+		return nil, err
+	}
+
+	modTime, err := time.Parse(time.RFC3339, obj.Updated)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO(stevenle): set file stat value to memcache.
+	stat := &GcsFileStat{
+		Etag:         obj.Etag,
+		ModifiedTime: modTime,
+	}
+	return stat, nil
 }
 
 func (g *GcsFileStorage) Write(c appengine.Context, filePath string, content []byte) error {

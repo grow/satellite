@@ -5,8 +5,6 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"path"
-	"strings"
 
 	"appengine"
 	"github.com/gorilla/rpc/v2"
@@ -83,47 +81,14 @@ func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine the file path from the URL.
-	filePath := r.URL.Path
-	ext := path.Ext(filePath)
-	if ext == "" {
-		filePath = path.Join(filePath, "index.html")
-		ext = ".html"
-	}
-	if !s.files.Exists(c, filePath) {
-		w.WriteHeader(http.StatusNotFound)
-		// Try to render /404.html if it exists.
-		if s.files.Exists(c, "/404.html") {
-			s.files.Serve(c, "/404.html", w)
-		} else {
-			fmt.Fprintln(w, "404: Not Found")
-		}
-		return
-	}
-
-	// Set the Content-Type header based on the file ext.
-	mimetype := mime.TypeByExtension(ext)
-	if mimetype != "" {
-		w.Header().Set("Content-Type", mimetype)
-	}
-
-	// By default, set cache-control headers for images.
-	if strings.HasPrefix(mimetype, "image/") {
-		w.Header().Set("Cache-Control", "private, max-age=3600")
-	}
-
 	// Serve the file.
-	err := s.files.Serve(c, filePath, w)
+	err := s.files.Serve(w, r)
 	if err != nil {
 		// Internal server error.
-		// Try to render /500.html if it exists.
-		c.Errorf("Failed to serve %v: %v", filePath, err)
+		// TODO(stevenle): custom 500 page.
+		c.Errorf("serve error: %v: %v", r.URL, err)
 		w.WriteHeader(http.StatusInternalServerError)
-		if s.files.Exists(c, "/500.html") {
-			s.files.Serve(c, "/500.html", w)
-		} else {
-			fmt.Fprintln(w, "500: Internal Server Error")
-		}
+		fmt.Fprintln(w, "500: Internal Server Error")
 		return
 	}
 }
