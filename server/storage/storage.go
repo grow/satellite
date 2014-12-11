@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/json"
 	"fmt"
 	"mime"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"appengine"
 	"appengine/blobstore"
 	gcs "appengine/file"
+	"appengine/memcache"
 	"appengine/urlfetch"
 	"code.google.com/p/goauth2/oauth"
 	"code.google.com/p/google-api-go-client/storage/v1"
@@ -25,8 +27,8 @@ type GcsFileStorage struct {
 }
 
 type GcsFileStat struct {
-	Etag         string
-	ModifiedTime time.Time
+	Etag         string    `json:"etag"`
+	ModifiedTime time.Time `json:"modified"`
 }
 
 func NewGcsFileStorage(bucket string) *GcsFileStorage {
@@ -93,6 +95,17 @@ func (g *GcsFileStorage) Serve(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (g *GcsFileStorage) Stat(c appengine.Context, filePath string) (*GcsFileStat, error) {
+	// Check for cached value.
+	cacheKey := "stat:" + filePath
+	item, err := memcache.Get(c, cacheKey)
+	if err == nil {
+		var stat GcsFileStat
+		err = json.Unmarshal(item.Value, &stat)
+		if err == nil {
+			return &stat, nil
+		}
+	}
+
 	// Remove leading slash to ge the GCS object id.
 	// E.g. filePath = "/index.html", gcsObjectId = "index.html".
 	gcsObjectId := filePath[1:]
@@ -128,11 +141,31 @@ func (g *GcsFileStorage) Stat(c appengine.Context, filePath string) (*GcsFileSta
 		return nil, err
 	}
 
-	// TODO(stevenle): set file stat value to memcache.
 	stat := &GcsFileStat{
 		Etag:         obj.Etag,
 		ModifiedTime: modTime,
 	}
+
+	// Set value to cache.
+	done := make(chan bool)
+	go func() {
+		cacheValue, err := json.Marshal(stat)
+		if err == nil {
+			cacheItem := &memcache.Item{
+				Key:   cacheKey,
+				Value: cacheValue,
+			}
+			memcache.Set(c, cacheItem)
+		}
+		done <- true
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Millisecond):
+		c.Errorf("memcache timeout")
+	}
+
 	return stat, nil
 }
 
