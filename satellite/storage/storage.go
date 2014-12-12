@@ -11,7 +11,6 @@ import (
 
 	"appengine"
 	"appengine/blobstore"
-	gcs "appengine/file"
 	"appengine/memcache"
 	"appengine/urlfetch"
 	"code.google.com/p/goauth2/oauth"
@@ -161,29 +160,6 @@ func (g *GcsFileStorage) Stat(filePath string) (*GcsFileStat, error) {
 	}
 
 	return stat, nil
-}
-
-func (g *GcsFileStorage) Write(filePath string, content []byte) error {
-	ext := path.Ext(filePath)
-	mimetype := mime.TypeByExtension(ext)
-	opts := &gcs.CreateOptions{
-		MIMEType:   mimetype,
-		BucketName: g.bucket,
-	}
-
-	gcsPath := g.getGcsPath(filePath)
-	writer, _, err := gcs.Create(g.context, gcsPath, opts)
-	if err != nil {
-		return err
-	}
-
-	defer writer.Close()
-	_, err = writer.Write(content)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func (g *GcsFileStorage) getGcsPath(filePath string) string {
