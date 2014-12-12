@@ -4,93 +4,30 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
-	"net/url"
 
 	"appengine"
 	"github.com/gorilla/rpc/v2"
 	jsonrpc "github.com/gorilla/rpc/v2/json"
-	"server/auth"
-	"server/settings"
-	"server/storage"
+	authservice "server/auth/services"
+	"server/domains"
 )
 
 type SatelliteServer struct {
 	initialized bool
-	auth        auth.Authenticator
-	files       storage.FileStorage
 }
 
 func (s *SatelliteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	c := appengine.NewContext(r)
-
-	// Prevent click-jacking.
-	w.Header().Set("X-Frame-Options", "SAMEORIGIN")
-
-	// Force https.
-	if r.URL.Scheme != "https" && !appengine.IsDevAppServer() {
-		redirectUrl, _ := url.ParseRequestURI(r.URL.String())
-		redirectUrl.Scheme = "https"
-		http.Redirect(w, r, redirectUrl.String(), http.StatusMovedPermanently)
-		return
-	}
-
-	// Initialize the server.
-	if !s.initialized {
-		settingsList := make([]settings.Settings, 2)
-		settings.GetMulti(c, []string{"auth", "storage"}, settingsList)
-		authSettings := settingsList[0]
-		storageSettings := settingsList[1]
-
-		if authSettings == nil || storageSettings == nil {
-			// Redirect user to the admin configuration page.
-			http.Redirect(w, r, "/admin/settings", http.StatusFound)
-			return
-		}
-
-		if authSettings["type"] == "basic" {
-			basicAuth := auth.NewBasicAuth()
-			if appengine.IsDevAppServer() {
-				go basicAuth.AddUser(c, "test", "testing123")
-			}
-			s.auth = basicAuth
-		} else {
-			c.Errorf("Unknown auth type: %v", authSettings["type"])
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintln(w, "500: Internal Server Error")
-			return
-		}
-
-		if storageSettings["type"] == "gcs" {
-			s.files = storage.NewGcsFileStorage(storageSettings["bucket"])
-		} else {
-			c.Errorf("Unknown storage type: %v", storageSettings["type"])
-			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Fprintln(w, "500: Internal Server Error")
-			return
-		}
-
-		s.initialized = true
-	}
-
-	// Authorize the request.
-	authorized := s.auth.IsAuthorized(r)
-	if !authorized {
-		w.Header().Set("WWW-Authenticate", "Basic realm=\"Please enter a username and password\"")
-		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprintln(w, "401: Unauthorized")
-		return
-	}
-
-	// Serve the file.
-	err := s.files.Serve(w, r)
+	d, err := domains.Get(r)
 	if err != nil {
-		// Internal server error.
-		// TODO(stevenle): custom 500 page.
-		c.Errorf("serve error: %v: %v", r.URL, err)
+		c := appengine.NewContext(r)
+		c.Errorf("domain error: %v: %v", r.URL.Host, err)
+
+		// TODO(stevenle): add a user-friendly admin ui for setup / configuration.
 		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintln(w, "500: Internal Server Error")
+		fmt.Fprintf(w, "not configured", r.URL.Host)
 		return
 	}
+	d.ServeHTTP(w, r)
 }
 
 func init() {
@@ -101,9 +38,9 @@ func init() {
 
 	rpcServer := rpc.NewServer()
 	rpcServer.RegisterCodec(jsonrpc.NewCodec(), "application/json")
-	rpcServer.RegisterService(auth.NewBasicAuthService(), "BasicAuthService")
-	rpcServer.RegisterService(settings.NewSettingsService(), "SettingsService")
+	rpcServer.RegisterService(authservice.NewBasicAuthService(), "BasicAuthService")
+	rpcServer.RegisterService(domains.NewDomainService(), "DomainService")
 
-	http.Handle("/admin/rpc", rpcServer)
+	http.Handle("/_/rpc", rpcServer)
 	http.Handle("/", s)
 }

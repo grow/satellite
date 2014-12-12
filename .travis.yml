@@ -9,4 +9,3 @@ install:
 
 script:
   - ./go_appengine/goapp test ./server/auth
-  - ./go_appengine/goapp test ./server/storage

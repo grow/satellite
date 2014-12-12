@@ -23,7 +23,8 @@ type FileStorage interface {
 }
 
 type GcsFileStorage struct {
-	bucket string
+	context appengine.Context
+	bucket  string
 }
 
 type GcsFileStat struct {
@@ -31,21 +32,14 @@ type GcsFileStat struct {
 	ModifiedTime time.Time `json:"modified"`
 }
 
-func NewGcsFileStorage(bucket string) *GcsFileStorage {
+func NewGcsFileStorage(c appengine.Context, bucket string) *GcsFileStorage {
 	return &GcsFileStorage{
-		bucket: bucket,
+		context: c,
+		bucket:  bucket,
 	}
 }
 
-func (g *GcsFileStorage) Exists(c appengine.Context, filePath string) bool {
-	gcsPath := g.getGcsPath(filePath)
-	fileInfo, _ := gcs.Stat(c, gcsPath)
-	return fileInfo != nil
-}
-
 func (g *GcsFileStorage) Serve(w http.ResponseWriter, r *http.Request) error {
-	c := appengine.NewContext(r)
-
 	filePath := r.URL.Path
 	ext := path.Ext(filePath)
 	if ext == "" {
@@ -55,9 +49,9 @@ func (g *GcsFileStorage) Serve(w http.ResponseWriter, r *http.Request) error {
 	gcsPath := g.getGcsPath(filePath)
 
 	// Get file stat.
-	stat, err := g.Stat(c, filePath)
+	stat, err := g.Stat(filePath)
 	if err != nil {
-		c.Errorf("stat error: %v", err)
+		g.context.Errorf("stat error: %v", err)
 	}
 	if stat == nil {
 		w.WriteHeader(http.StatusNotFound)
@@ -86,7 +80,7 @@ func (g *GcsFileStorage) Serve(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	blobKey, err := blobstore.BlobKeyForFile(c, gcsPath)
+	blobKey, err := blobstore.BlobKeyForFile(g.context, gcsPath)
 	if err != nil {
 		return err
 	}
@@ -94,10 +88,10 @@ func (g *GcsFileStorage) Serve(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (g *GcsFileStorage) Stat(c appengine.Context, filePath string) (*GcsFileStat, error) {
+func (g *GcsFileStorage) Stat(filePath string) (*GcsFileStat, error) {
 	// Check for cached value.
 	cacheKey := "stat:" + filePath
-	item, err := memcache.Get(c, cacheKey)
+	item, err := memcache.Get(g.context, cacheKey)
 	if err == nil {
 		var stat GcsFileStat
 		err = json.Unmarshal(item.Value, &stat)
@@ -110,7 +104,7 @@ func (g *GcsFileStorage) Stat(c appengine.Context, filePath string) (*GcsFileSta
 	// E.g. filePath = "/index.html", gcsObjectId = "index.html".
 	gcsObjectId := filePath[1:]
 
-	accessToken, _, err := appengine.AccessToken(c, storage.CloudPlatformScope, storage.DevstorageRead_onlyScope)
+	accessToken, _, err := appengine.AccessToken(g.context, storage.CloudPlatformScope, storage.DevstorageRead_onlyScope)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +115,7 @@ func (g *GcsFileStorage) Stat(c appengine.Context, filePath string) (*GcsFileSta
 			AccessToken: accessToken,
 		},
 		Transport: &urlfetch.Transport{
-			Context: c,
+			Context: g.context,
 		},
 	}
 	client := &http.Client{Transport: transport}
@@ -155,7 +149,7 @@ func (g *GcsFileStorage) Stat(c appengine.Context, filePath string) (*GcsFileSta
 				Key:   cacheKey,
 				Value: cacheValue,
 			}
-			memcache.Set(c, cacheItem)
+			memcache.Set(g.context, cacheItem)
 		}
 		done <- true
 	}()
@@ -163,13 +157,13 @@ func (g *GcsFileStorage) Stat(c appengine.Context, filePath string) (*GcsFileSta
 	select {
 	case <-done:
 	case <-time.After(5 * time.Millisecond):
-		c.Errorf("memcache timeout")
+		g.context.Errorf("memcache timeout")
 	}
 
 	return stat, nil
 }
 
-func (g *GcsFileStorage) Write(c appengine.Context, filePath string, content []byte) error {
+func (g *GcsFileStorage) Write(filePath string, content []byte) error {
 	ext := path.Ext(filePath)
 	mimetype := mime.TypeByExtension(ext)
 	opts := &gcs.CreateOptions{
@@ -178,7 +172,7 @@ func (g *GcsFileStorage) Write(c appengine.Context, filePath string, content []b
 	}
 
 	gcsPath := g.getGcsPath(filePath)
-	writer, _, err := gcs.Create(c, gcsPath, opts)
+	writer, _, err := gcs.Create(g.context, gcsPath, opts)
 	if err != nil {
 		return err
 	}
