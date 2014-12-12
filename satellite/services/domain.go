@@ -1,22 +1,20 @@
-package domains
+package services
 
 import (
 	"net/http"
 
 	"appengine"
-	"appengine/datastore"
+	"satellite/domains"
 )
 
-type DomainService struct {
-}
+type DomainService struct{}
 
 func NewDomainService() *DomainService {
 	return &DomainService{}
 }
 
 type SetDomainRequest struct {
-	Name    string   `json:"name"`
-	Aliases []string `json:"aliases"`
+	Domain domains.DomainEntity `json:"domain"`
 }
 
 type SetDomainResponse struct {
@@ -25,12 +23,7 @@ type SetDomainResponse struct {
 
 func (s *DomainService) SetDomain(r *http.Request, request *SetDomainRequest, response *SetDomainResponse) error {
 	c := appengine.NewContext(r)
-	k := datastore.NewKey(c, DomainEntityType, request.Name, 0 /* intID */, nil /* parent */)
-	e := &DomainEntity{
-		Name:    request.Name,
-		Aliases: request.Aliases,
-	}
-	_, err := datastore.Put(c, k, e)
+	err := domains.Put(c, &request.Domain)
 	if err != nil {
 		c.Errorf("set domain error: %v", err)
 	}

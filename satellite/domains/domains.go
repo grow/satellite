@@ -6,17 +6,17 @@ import (
 
 	"appengine"
 	"appengine/datastore"
-	"server/auth"
-	"server/storage"
+	"satellite/auth"
+	"satellite/storage"
 )
 
 const DomainEntityType = "Domain"
 
 type DomainEntity struct {
-	Name            string          `datastore:"name"`
-	Aliases         []string        `datastore:"aliases"`
-	AuthSettings    AuthSettings    `datastore:"auth"`
-	StorageSettings StorageSettings `datastore:"storage"`
+	Name            string          `datastore:"name" json:"name"`
+	Aliases         []string        `datastore:"aliases" json:"aliases"`
+	AuthSettings    AuthSettings    `datastore:"auth" json:"auth"`
+	StorageSettings StorageSettings `datastore:"storage" json:"storage"`
 }
 
 type AuthSettings struct {
@@ -36,11 +36,8 @@ type Domain struct {
 	entity  *DomainEntity
 }
 
-func Get(r *http.Request) (*Domain, error) {
-	c := appengine.NewContext(r)
-
+func Get(c appengine.Context, name string) (*Domain, error) {
 	// TODO(stevenle): support domain aliases.
-	name := r.URL.Host
 	k := datastore.NewKey(c, DomainEntityType, name, 0 /* intID */, nil /* parent */)
 	e := new(DomainEntity)
 	err := datastore.Get(c, k, e)
@@ -54,6 +51,12 @@ func Get(r *http.Request) (*Domain, error) {
 		entity:  e,
 	}
 	return d, nil
+}
+
+func Put(c appengine.Context, e *DomainEntity) error {
+	k := datastore.NewKey(c, DomainEntityType, e.Name, 0 /* intID */, nil /* parent */)
+	_, err := datastore.Put(c, k, e)
+	return err
 }
 
 func (d *Domain) Auth() auth.Authenticator {
