@@ -14,19 +14,18 @@ func TestBasicAuth(t *testing.T) {
 	}
 	defer inst.Close()
 
-	a := NewBasicAuth()
-	if a == nil {
-		t.Fatalf("Failed to create BasicAuth")
-	}
-
 	// Create new users: alice and bob.
 	req1, err := inst.NewRequest("GET", "/", nil)
 	if err != nil {
 		t.Fatalf("Failed to create req1: %v", err)
 	}
 	c1 := appengine.NewContext(req1)
-	a.AddUser(c1, "alice", "alicerocks")
-	a.AddUser(c1, "bob", "alicesucks")
+	a := NewBasicAuth(c1)
+	if a == nil {
+		t.Fatalf("Failed to create BasicAuth")
+	}
+	a.AddUser("alice", "alicerocks")
+	a.AddUser("bob", "alicesucks")
 
 	// Verify alice login success.
 	req2, err := inst.NewRequest("GET", "/", nil)

@@ -22,6 +22,7 @@ type Authenticator interface {
 
 // BasicAuth uses HTTP basic auth to authenticate and authorize a user.
 type BasicAuth struct {
+	context appengine.Context
 }
 
 type BasicAuthUser struct {
@@ -31,8 +32,8 @@ type BasicAuthUser struct {
 
 const EntityBasicAuthUser = "BasicAuthUser"
 
-func NewBasicAuth() *BasicAuth {
-	return &BasicAuth{}
+func NewBasicAuth(c appengine.Context) *BasicAuth {
+	return &BasicAuth{c}
 }
 
 func (b *BasicAuth) IsAuthorized(r *http.Request) bool {
@@ -55,11 +56,10 @@ func (b *BasicAuth) IsAuthorized(r *http.Request) bool {
 
 	username := userPass[:i]
 	password := userPass[i+1:]
-	c := appengine.NewContext(r)
-	return b.Authenticate(c, username, password)
+	return b.Authenticate(username, password)
 }
 
-func (b *BasicAuth) AddUser(c appengine.Context, username string, password string) error {
+func (b *BasicAuth) AddUser(username string, password string) error {
 	// Only allow alphanumeric chars in username.
 	matched, _ := regexp.MatchString("[A-Za-z0-9]+", username)
 	if !matched {
@@ -77,15 +77,15 @@ func (b *BasicAuth) AddUser(c appengine.Context, username string, password strin
 		Username:     username,
 		PasswordHash: hash,
 	}
-	key := b.keyForUser(c, username)
-	_, err = datastore.Put(c, key, user)
+	key := b.keyForUser(username)
+	_, err = datastore.Put(b.context, key, user)
 	return err
 }
 
-func (b *BasicAuth) Authenticate(c appengine.Context, username string, password string) bool {
-	key := b.keyForUser(c, username)
+func (b *BasicAuth) Authenticate(username string, password string) bool {
+	key := b.keyForUser(username)
 	user := new(BasicAuthUser)
-	err := datastore.Get(c, key, user)
+	err := datastore.Get(b.context, key, user)
 	if err != nil {
 		return false
 	}
@@ -94,6 +94,6 @@ func (b *BasicAuth) Authenticate(c appengine.Context, username string, password 
 	return err == nil
 }
 
-func (b *BasicAuth) keyForUser(c appengine.Context, username string) *datastore.Key {
-	return datastore.NewKey(c, EntityBasicAuthUser, username, 0 /* intID */, nil /* parent */)
+func (b *BasicAuth) keyForUser(username string) *datastore.Key {
+	return datastore.NewKey(b.context, EntityBasicAuthUser, username, 0 /* intID */, nil /* parent */)
 }
